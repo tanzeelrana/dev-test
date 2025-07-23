@@ -1,6 +1,7 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { type DefaultSession, type NextAuthConfig } from "next-auth";
 import DiscordProvider from "next-auth/providers/discord";
+import CredentialsProvider from "next-auth/providers/credentials";
 
 import { db } from "@/lib/db";
 
@@ -33,6 +34,41 @@ declare module "next-auth" {
 export const nextAuthConfig = {
   providers: [
     DiscordProvider,
+
+    // Simple credentials provider for testing
+    CredentialsProvider({
+      id: "test-credentials",
+      name: "Test Login",
+      credentials: {
+        email: {
+          label: "Email",
+          type: "email",
+          placeholder: "test@example.com",
+        },
+        name: {
+          label: "Name",
+          type: "text",
+          placeholder: "Test User",
+        },
+      },
+      async authorize(credentials) {
+        // For testing purposes, accept any email/name combo
+        // In production, you'd validate against a database
+        if (credentials?.email && typeof credentials.email === "string") {
+          return {
+            id: `test_${Date.now()}`,
+            email: credentials.email,
+            name:
+              (typeof credentials.name === "string"
+                ? credentials.name
+                : null) || "Test User",
+            image: null,
+          };
+        }
+        return null;
+      },
+    }),
+
     /**
      * ...add more providers here.
      *
@@ -45,12 +81,36 @@ export const nextAuthConfig = {
   ],
   adapter: PrismaAdapter(db),
   callbacks: {
-    session: ({ session, user }) => ({
-      ...session,
-      user: {
-        ...session.user,
-        id: user.id,
-      },
-    }),
+    session: ({ session, user, token }) => {
+      // For credentials provider, user info comes from token
+      if (token?.sub && !user) {
+        return {
+          ...session,
+          user: {
+            ...session.user,
+            id: token.sub,
+          },
+        };
+      }
+
+      // For database providers (Discord), user info comes from user object
+      return {
+        ...session,
+        user: {
+          ...session.user,
+          id: user?.id || token?.sub || session.user.id,
+        },
+      };
+    },
+    jwt: ({ token, user }) => {
+      // Store user info in JWT for credentials provider
+      if (user) {
+        token.sub = user.id;
+      }
+      return token;
+    },
+  },
+  pages: {
+    signIn: "/auth/signin", // Custom sign-in page
   },
 } satisfies NextAuthConfig;
