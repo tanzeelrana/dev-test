@@ -12,9 +12,29 @@ export async function GET(request: NextRequest) {
   try {
     console.log("🔌 SSE Route: Processing connection request...");
 
-    // Get session for user identification
     const session = await getSession();
     const userId = session?.user?.id;
+
+    if (!userId) {
+      log.warn("Unauthenticated SSE connection attempt", {
+        ip:
+          request.headers.get("x-forwarded-for") ||
+          request.headers.get("x-real-ip") ||
+          "unknown",
+        userAgent: request.headers.get("user-agent") || "unknown",
+      });
+
+      return new Response(
+        JSON.stringify({
+          error: "Authentication required",
+          message: "You must be logged in to establish an SSE connection",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
 
     // Get query parameters
     const { searchParams } = new URL(request.url);
@@ -28,57 +48,46 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Generate session ID for anonymous users if not provided
-    if (!sessionId && !userId) {
-      // Create a session ID based on IP and user agent for anonymous users
-      const ip =
-        request.headers.get("x-forwarded-for") ||
-        request.headers.get("x-real-ip") ||
-        "unknown";
-      const userAgent = request.headers.get("user-agent") || "unknown";
-      const timestamp = Date.now();
-
-      // Create a simple hash for anonymous session
-      sessionId = `anon_${Buffer.from(`${ip}_${userAgent}_${timestamp}`).toString("base64").slice(0, 16)}`;
-
-      log.info("Generated anonymous session ID", {
+    if (!sessionId) {
+      sessionId = `auth_${userId}_${Date.now()}`;
+      log.info("Generated authenticated session ID", {
         sessionId,
-        ip: ip.slice(0, 10) + "...",
+        userId,
       });
     }
 
-    // Add connection metadata
     metadata.ip =
       request.headers.get("x-forwarded-for") ||
       request.headers.get("x-real-ip") ||
       "unknown";
     metadata.userAgent = request.headers.get("user-agent") || "unknown";
-    metadata.isAuthenticated = !!userId;
+    metadata.isAuthenticated = true; // Always true now
     metadata.connectionTime = new Date().toISOString();
+    metadata.userEmail = session?.user?.email;
+    metadata.userName = session?.user?.name;
 
-    log.info("SSE connection request", {
-      userId: userId || "anonymous",
+    log.info("Authenticated SSE connection request", {
+      userId,
       sessionId,
-      isAuthenticated: !!userId,
+      isAuthenticated: true,
       metadata: {
         ip: metadata.ip,
         userAgent:
           typeof metadata.userAgent === "string"
             ? metadata.userAgent.slice(0, 50) + "..."
             : metadata.userAgent,
+        userEmail: metadata.userEmail,
       },
     });
 
     const sseManager = getSSEManager();
 
-    // Create the SSE connection
     const { connection, stream } = sseManager.createConnection({
       userId,
       sessionId,
       metadata,
     });
 
-    console.log("🔌 SSE Route: Connection created:", connection.id);
     console.log(
       "🔌 SSE Route: Total connections now:",
       sseManager.getStats().totalConnections,
@@ -95,17 +104,17 @@ export async function GET(request: NextRequest) {
 
     const stats = sseManager.getStats();
 
-    log.info(`SSE connection established: ${connection.id}`, {
-      userId: userId || "anonymous",
+    log.info(`Authenticated SSE connection established: ${connection.id}`, {
+      userId,
       sessionId,
-      isAuthenticated: !!userId,
+      isAuthenticated: true,
       totalConnections: stats.totalConnections,
       authenticatedUsers: Object.keys(stats.connectionsByUser).length,
     });
 
     return new Response(stream, { headers });
   } catch (error) {
-    handleError("establishing SSE connection", error);
+    handleError("establishing authenticated SSE connection", error);
 
     return new Response(
       JSON.stringify({

@@ -3,6 +3,7 @@ import {
   isProtectedRoute,
   isPublicRoute,
   isUniversalRoute,
+  getAfterLoginPath,
 } from "@/features/auth";
 import { authConfig } from "@/config/auth";
 import { paths } from "@/config/routes";
@@ -29,7 +30,7 @@ export const authMiddleware: Middleware = async (request, next) => {
 
   // Redirect authenticated users away from public routes
   if (isPublicRoute(path) && hasSession) {
-    return NextResponse.redirect(new URL(paths.homePage, request.url));
+    return NextResponse.redirect(new URL(getAfterLoginPath(), request.url));
   }
 
   // Continue to the next middleware or route handler

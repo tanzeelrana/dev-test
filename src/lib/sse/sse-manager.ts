@@ -56,7 +56,7 @@ export class SSEManager {
    * Create a new SSE connection
    */
   createConnection(params: {
-    userId?: string;
+    userId: string;
     sessionId?: string;
     metadata?: Record<string, unknown>;
   }): { connection: SSEConnection; stream: ReadableStream } {
@@ -68,7 +68,12 @@ export class SSEManager {
       );
     }
 
+    if (!params.userId) {
+      throw new Error("userId is required for SSE connections");
+    }
+
     const connectionId = this.generateConnectionId();
+    const connectionTime = Date.now();
     let controller: ReadableStreamDefaultController;
     let cleanupCalled = false;
 
@@ -76,15 +81,13 @@ export class SSEManager {
       start: (ctrl) => {
         controller = ctrl;
 
-        // Send initial connection message
         const welcomeMessage = this.formatSSEMessage({
           event: "connected",
-          data: JSON.stringify({ connectionId, timestamp: Date.now() }),
+          data: JSON.stringify({ connectionId, timestamp: connectionTime }),
         });
         ctrl.enqueue(new TextEncoder().encode(welcomeMessage));
       },
       cancel: () => {
-        // Prevent double cleanup
         if (!cleanupCalled) {
           cleanupCalled = true;
           this.removeConnection(connectionId);
@@ -97,9 +100,9 @@ export class SSEManager {
       userId: params.userId,
       sessionId: params.sessionId,
       controller: controller!,
-      lastPing: Date.now(),
+      lastPing: connectionTime,
       metadata: params.metadata,
-      connectionTime: Date.now(),
+      connectionTime,
       userAgent: params.metadata?.userAgent as string,
       ip: params.metadata?.ip as string,
       closed: false,
@@ -108,7 +111,7 @@ export class SSEManager {
     this.store.addConnection(connection);
     this.onConnect?.(connection);
 
-    log.info(`SSE connection created: ${connectionId}`, {
+    log.info(`Authenticated SSE connection created: ${connectionId}`, {
       userId: params.userId,
       sessionId: params.sessionId,
       totalConnections: this.store.getStats().totalConnections,

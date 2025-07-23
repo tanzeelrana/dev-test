@@ -13,11 +13,20 @@ interface Notification {
 export function SSEDemo() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [testMessage, setTestMessage] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const { state, lastEvent, connect, disconnect, subscribe } = useSSE({
     autoReconnect: true,
     maxReconnectAttempts: 3,
   });
+
+  useEffect(() => {
+    if (state.error && state.error.includes("Authentication required")) {
+      setAuthError("You must be logged in to use SSE features");
+    } else {
+      setAuthError(null);
+    }
+  }, [state.error]);
 
   useEffect(() => {
     const unsubscribeMessage = subscribe("user.message", (data: any) => {
@@ -56,9 +65,7 @@ export function SSEDemo() {
       ]);
     });
 
-    const unsubscribeAll = subscribe("*", (data: any, event) => {
-      console.log("SSE Event received:", event);
-    });
+    const unsubscribeAll = subscribe("*", (data: any, event) => {});
 
     return () => {
       unsubscribeMessage();
@@ -84,7 +91,11 @@ export function SSEDemo() {
       if (response.ok) {
         setTestMessage("");
       } else {
-        console.error("Failed to send test notification");
+        const errorData = await response.json();
+        console.error("Failed to send test notification:", errorData);
+        if (errorData.message?.includes("Authentication required")) {
+          setAuthError("You must be logged in to send notifications");
+        }
       }
     } catch (error) {
       console.error("Error sending test notification:", error);
@@ -109,10 +120,36 @@ export function SSEDemo() {
     return "Disconnected";
   };
 
+  if (authError) {
+    return (
+      <div className="mx-auto max-w-4xl space-y-6 p-6">
+        <div className="rounded-lg bg-white p-6 shadow-md">
+          <div className="text-center">
+            <h1 className="mb-4 text-2xl font-bold text-red-600">
+              Authentication Required
+            </h1>
+            <p className="mb-4 text-gray-600">{authError}</p>
+            <div className="rounded-lg bg-yellow-50 p-4">
+              <h3 className="mb-2 text-lg font-semibold">
+                To use SSE features:
+              </h3>
+              <ol className="text-left text-sm text-gray-700">
+                <li>1. Log in to your account</li>
+                <li>2. Refresh this page</li>
+                <li>3. Click "Connect" to establish SSE connection</li>
+                <li>4. Send and receive real-time notifications</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-4xl space-y-6 p-6">
       <div className="rounded-lg bg-white p-6 shadow-md">
-        <h1 className="mb-4 text-2xl font-bold">Server-Sent Events Demo</h1>
+        <h1 className="mb-4 text-2xl font-bold">Authenticated SSE Demo</h1>
 
         {/* Connection Status */}
         <div className="mb-6 rounded-lg bg-gray-50 p-4">
@@ -182,7 +219,7 @@ export function SSEDemo() {
             </button>
           </div>
           <p className="mt-2 text-sm text-gray-600">
-            This will send a test notification to all connected clients
+            This will send a test notification to all authenticated clients
           </p>
         </div>
 

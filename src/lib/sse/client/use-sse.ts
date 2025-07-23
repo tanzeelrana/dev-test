@@ -101,7 +101,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
 
   const [lastEvent, setLastEvent] = useState<SSEEventData | null>(null);
 
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const reconnectAttempts = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const eventHandlers = useRef<Map<string, Set<Function>>>(new Map());
@@ -117,19 +117,12 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     return url.toString();
   }, [params]);
 
-  const handleMessage = useCallback((event: MessageEvent) => {
+  const handleMessage = useCallback((event: SSEEventData) => {
     try {
-      const eventData: SSEEventData = {
-        type: event.type || "message",
-        data: JSON.parse(event.data),
-        id: event.lastEventId || undefined,
-        timestamp: Date.now(),
-      };
-
-      setLastEvent(eventData);
+      setLastEvent(event);
 
       // Handle heartbeat events
-      if (eventData.type === "heartbeat") {
+      if (event.type === "heartbeat") {
         setState((prev) => ({
           ...prev,
           lastHeartbeat: Date.now(),
@@ -138,24 +131,23 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
       }
 
       // Handle connection events
-      if (eventData.type === "connected") {
+      if (event.type === "connected") {
         setState((prev) => ({
           ...prev,
-          connectionId: (eventData.data as { connectionId: string })
-            .connectionId,
+          connectionId: (event.data as { connectionId: string }).connectionId,
         }));
         return;
       }
 
       // Call registered event handlers
-      const handlers = eventHandlers.current.get(eventData.type);
+      const handlers = eventHandlers.current.get(event.type);
       if (handlers) {
         handlers.forEach((handler) => {
           try {
-            handler(eventData.data, eventData);
+            handler(event.data, event);
           } catch (error) {
             console.error(
-              `Error in SSE event handler for ${eventData.type}:`,
+              `Error in SSE event handler for ${event.type}:`,
               error,
             );
           }
@@ -167,7 +159,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
       if (genericHandlers) {
         genericHandlers.forEach((handler) => {
           try {
-            handler(eventData.data, eventData);
+            handler(event.data, event);
           } catch (error) {
             console.error("Error in generic SSE event handler:", error);
           }
@@ -176,6 +168,40 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     } catch (error) {
       console.error("Error parsing SSE event data:", error);
     }
+  }, []);
+
+  const parseSSEMessage = useCallback((text: string): SSEEventData | null => {
+    const lines = text.split("\n");
+    let eventType = "message";
+    let data = "";
+    let id = "";
+
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        eventType = line.slice(7);
+      } else if (line.startsWith("data: ")) {
+        data = line.slice(6);
+      } else if (line.startsWith("id: ")) {
+        id = line.slice(4);
+      }
+    }
+
+    if (data) {
+      try {
+        const parsedData = JSON.parse(data);
+        return {
+          type: eventType,
+          data: parsedData,
+          id: id || undefined,
+          timestamp: Date.now(),
+        };
+      } catch (error) {
+        console.error("Error parsing SSE data:", error);
+        return null;
+      }
+    }
+
+    return null;
   }, []);
 
   const handleOpen = useCallback(() => {
@@ -190,14 +216,14 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
   }, []);
 
   const handleError = useCallback(
-    (event: Event) => {
-      console.error("SSE connection error:", event);
+    (error: string) => {
+      console.error("SSE connection error:", error);
 
       setState((prev) => ({
         ...prev,
         connected: false,
         connecting: false,
-        error: "Connection error",
+        error: error,
       }));
 
       // Attempt reconnection if enabled
@@ -208,36 +234,100 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
         );
 
         reconnectTimeoutRef.current = setTimeout(() => {
-          // Call connect directly without dependency
-          if (eventSourceRef.current) {
-            eventSourceRef.current.close();
+          // We'll call connect after it's defined
+          if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
           }
 
-          console.log(" Attempting to reconnect...");
+          console.log("  Attempting to reconnect...");
           setState((prev) => ({
             ...prev,
             connecting: true,
             error: null,
           }));
 
+          // Recreate the connection logic here to avoid circular dependency
           try {
-            const eventSource = new EventSource(buildSSEUrl());
-            eventSourceRef.current = eventSource;
+            const abortController = new AbortController();
+            abortControllerRef.current = abortController;
 
-            eventSource.addEventListener("open", handleOpen);
-            eventSource.addEventListener("error", handleError);
-            eventSource.addEventListener("message", handleMessage);
+            const url = buildSSEUrl();
+            console.log("  Fetching SSE URL:", url);
 
-            // Listen for custom events
-            eventSource.addEventListener("heartbeat", handleMessage);
-            eventSource.addEventListener("connected", handleMessage);
+            fetch(url, {
+              method: "GET",
+              credentials: "include",
+              headers: {
+                Accept: "text/event-stream",
+                "Cache-Control": "no-cache",
+              },
+              signal: abortController.signal,
+            })
+              .then((response) => {
+                if (!response.ok) {
+                  throw new Error(
+                    `HTTP ${response.status}: ${response.statusText}`,
+                  );
+                }
 
-            // Add listeners for all registered event types
-            eventHandlers.current.forEach((_, eventType) => {
-              if (eventType !== "*") {
-                eventSource.addEventListener(eventType, handleMessage);
-              }
-            });
+                if (!response.body) {
+                  throw new Error("No response body");
+                }
+
+                handleOpen();
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+
+                const readStream = () => {
+                  reader
+                    .read()
+                    .then(({ done, value }) => {
+                      if (done) {
+                        console.log("SSE stream ended");
+                        return;
+                      }
+
+                      const chunk = decoder.decode(value, { stream: true });
+                      buffer += chunk;
+
+                      // Process complete messages
+                      const messages = buffer.split("\n\n");
+                      buffer = messages.pop() || "";
+
+                      for (const message of messages) {
+                        if (message.trim()) {
+                          const eventData = parseSSEMessage(message);
+                          if (eventData) {
+                            handleMessage(eventData);
+                          }
+                        }
+                      }
+
+                      // Continue reading
+                      readStream();
+                    })
+                    .catch((error) => {
+                      if (error.name === "AbortError") {
+                        console.log("SSE connection aborted");
+                        return;
+                      }
+                      console.error("Error reading SSE stream:", error);
+                      handleError(error.message);
+                    });
+                };
+
+                readStream();
+              })
+              .catch((error) => {
+                if (error.name === "AbortError") {
+                  console.log("SSE connection aborted");
+                  return;
+                }
+                console.error("Failed to create SSE connection:", error);
+                handleError(error.message);
+              });
           } catch (error) {
             console.error("Failed to create SSE connection:", error);
             setState((prev) => ({
@@ -262,12 +352,14 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
       buildSSEUrl,
       handleOpen,
       handleMessage,
+      parseSSEMessage,
     ],
   );
 
   const connect = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
+    // Cancel any existing connection
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
     }
 
     console.log("  Attempting to connect...");
@@ -278,25 +370,83 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     }));
 
     try {
-      const eventSource = new EventSource(buildSSEUrl());
-      eventSourceRef.current = eventSource;
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
 
-      eventSource.addEventListener("open", handleOpen);
-      eventSource.addEventListener("error", handleError);
-      eventSource.addEventListener("message", handleMessage);
+      const url = buildSSEUrl();
+      console.log("  Fetching SSE URL:", url);
 
-      // Listen for custom events
-      eventSource.addEventListener("heartbeat", handleMessage);
-      eventSource.addEventListener("connected", handleMessage);
+      fetch(url, {
+        method: "GET",
+        credentials: "include", // This is crucial - it sends cookies!
+        headers: {
+          Accept: "text/event-stream",
+          "Cache-Control": "no-cache",
+        },
+        signal: abortController.signal,
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
 
-      // Add listeners for all registered event types
-      eventHandlers.current.forEach((_, eventType) => {
-        if (eventType !== "*") {
-          eventSource.addEventListener(eventType, handleMessage);
-        }
-      });
+          if (!response.body) {
+            throw new Error("No response body");
+          }
 
-      console.log("  EventSource created, URL:", buildSSEUrl());
+          handleOpen();
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          const readStream = () => {
+            reader
+              .read()
+              .then(({ done, value }) => {
+                if (done) {
+                  console.log("SSE stream ended");
+                  return;
+                }
+
+                const chunk = decoder.decode(value, { stream: true });
+                buffer += chunk;
+
+                const messages = buffer.split("\n\n");
+                buffer = messages.pop() || "";
+
+                for (const message of messages) {
+                  if (message.trim()) {
+                    const eventData = parseSSEMessage(message);
+                    if (eventData) {
+                      handleMessage(eventData);
+                    }
+                  }
+                }
+
+                // Continue reading
+                readStream();
+              })
+              .catch((error) => {
+                if (error.name === "AbortError") {
+                  console.log("SSE connection aborted");
+                  return;
+                }
+                console.error("Error reading SSE stream:", error);
+                handleError(error.message);
+              });
+          };
+
+          readStream();
+        })
+        .catch((error) => {
+          if (error.name === "AbortError") {
+            console.log("SSE connection aborted");
+            return;
+          }
+          console.error("Failed to create SSE connection:", error);
+          handleError(error.message);
+        });
     } catch (error) {
       console.error("Failed to create SSE connection:", error);
       setState((prev) => ({
@@ -305,7 +455,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
         error: error instanceof Error ? error.message : "Connection failed",
       }));
     }
-  }, [buildSSEUrl, handleOpen, handleError, handleMessage]);
+  }, [buildSSEUrl, handleOpen, handleError, handleMessage, parseSSEMessage]);
 
   const disconnect = useCallback(() => {
     console.log("  Disconnecting...");
@@ -315,10 +465,10 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
       reconnectTimeoutRef.current = null;
     }
 
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-      console.log("  EventSource closed");
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      console.log("  SSE connection aborted");
     }
 
     setState({
@@ -343,11 +493,6 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
 
       eventHandlers.current.get(eventType)!.add(handler);
 
-      // If we're already connected, add the event listener
-      if (eventSourceRef.current && eventType !== "*") {
-        eventSourceRef.current.addEventListener(eventType, handleMessage);
-      }
-
       // Return unsubscribe function
       return () => {
         const handlers = eventHandlers.current.get(eventType);
@@ -359,21 +504,18 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
         }
       };
     },
-    [handleMessage],
+    [],
   );
 
   const sendTestEvent = useCallback(
     (eventType: string, data: unknown) => {
       // This is for development/testing - simulate receiving an event
-      const mockEvent = new MessageEvent("message", {
-        data: JSON.stringify(data),
-        lastEventId: `test_${Date.now()}`,
-      });
-
-      Object.defineProperty(mockEvent, "type", {
-        value: eventType,
-        writable: false,
-      });
+      const mockEvent: SSEEventData = {
+        type: eventType,
+        data: data,
+        id: `test_${Date.now()}`,
+        timestamp: Date.now(),
+      };
 
       handleMessage(mockEvent);
     },

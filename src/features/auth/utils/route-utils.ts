@@ -77,7 +77,7 @@ export function getRouteData(path: string): RouteData | undefined {
  * @returns {string} Path to redirect to after login
  */
 export function getAfterLoginPath(): string {
-  return paths.homePage;
+  return paths.sseDemoPage;
 }
 
 /**

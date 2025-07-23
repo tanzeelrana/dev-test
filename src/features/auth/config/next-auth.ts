@@ -4,6 +4,7 @@ import DiscordProvider from "next-auth/providers/discord";
 import CredentialsProvider from "next-auth/providers/credentials";
 
 import { db } from "@/lib/db";
+import { authConfig } from "@/config/auth";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -80,33 +81,55 @@ export const nextAuthConfig = {
      */
   ],
   adapter: PrismaAdapter(db),
-  callbacks: {
-    session: ({ session, user, token }) => {
-      // For credentials provider, user info comes from token
-      if (token?.sub && !user) {
-        return {
-          ...session,
-          user: {
-            ...session.user,
-            id: token.sub,
-          },
-        };
-      }
 
-      // For database providers (Discord), user info comes from user object
+  session: {
+    strategy: "jwt",
+    maxAge: authConfig.sessionMaxAge,
+  },
+
+  cookies: {
+    sessionToken: {
+      name: authConfig.sessionCookieName,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    csrfToken: {
+      name: authConfig.csrfCookieName,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+  },
+
+  callbacks: {
+    session: ({ session, token }) => {
       return {
         ...session,
         user: {
           ...session.user,
-          id: user?.id || token?.sub || session.user.id,
+          id: token.sub || session.user.id,
         },
       };
     },
-    jwt: ({ token, user }) => {
-      // Store user info in JWT for credentials provider
+    jwt: ({ token, user, account }) => {
       if (user) {
         token.sub = user.id;
+        token.email = user.email;
+        token.name = user.name;
+        token.picture = user.image;
       }
+
+      if (account) {
+        token.provider = account.provider;
+      }
+
       return token;
     },
   },

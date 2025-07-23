@@ -7,13 +7,33 @@ const { log, handleError } = createServiceContext("SSETestRoute");
 
 export async function POST(request: NextRequest) {
   try {
-    // Get session but don't require authentication for testing
     const session = await getSession();
     const isAuthenticated = !!session?.user;
     const userId = session?.user?.id;
 
+    if (!isAuthenticated || !userId) {
+      log.warn("Unauthenticated notification attempt", {
+        ip:
+          request.headers.get("x-forwarded-for") ||
+          request.headers.get("x-real-ip") ||
+          "unknown",
+        userAgent: request.headers.get("user-agent") || "unknown",
+      });
+
+      return new Response(
+        JSON.stringify({
+          error: "Authentication required",
+          message: "You must be logged in to send notifications",
+        }),
+        {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
     const body = await request.json();
-    const { eventType, data, target } = body;
+    const { eventType, data, target, options } = body;
 
     if (!eventType || !data) {
       return new Response(
@@ -24,30 +44,43 @@ export async function POST(request: NextRequest) {
 
     let result;
 
-    // Determine how to send the notification
-    if (target?.userId && isAuthenticated) {
-      // Send to specific user (only if requester is authenticated)
-      result = await notifyUser(target.userId, eventType, data);
-      log.info(`Test notification sent to user ${target.userId}`, {
+    if (target?.userId) {
+      result = await notifyUser(target.userId, eventType, data, {
+        id: options?.id,
+        retry: options?.retry,
+      });
+      log.info(
+        `Authenticated user ${userId} sent notification to user ${target.userId}`,
+        {
+          eventType,
+          result,
+          requesterId: userId,
+        },
+      );
+    } else {
+      // Broadcast to all connected clients (authenticated users only)
+      result = await broadcastNotification(
+        eventType,
+        {
+          ...data,
+          // Add context about who sent it
+          sentBy: "authenticated_user",
+          senderId: userId,
+          senderEmail: session?.user?.email,
+          senderName: session?.user?.name,
+          timestamp: new Date().toISOString(),
+        },
+        {
+          id: options?.id,
+          retry: options?.retry,
+        },
+      );
+
+      log.info("Authenticated user sent broadcast notification", {
         eventType,
         result,
         requesterId: userId,
-      });
-    } else {
-      // Broadcast to all connected clients (works for both auth states)
-      result = await broadcastNotification(eventType, {
-        ...data,
-        // Add context about who sent it
-        sentBy: isAuthenticated ? "authenticated_user" : "anonymous_user",
-        senderId: userId || "anonymous",
-        timestamp: new Date().toISOString(),
-      });
-
-      log.info("Test notification broadcasted", {
-        eventType,
-        result,
-        isAuthenticated,
-        requesterId: userId || "anonymous",
+        requesterEmail: session?.user?.email,
       });
     }
 
@@ -59,15 +92,17 @@ export async function POST(request: NextRequest) {
         failed: result.failed,
         message: `Notification sent to ${result.sent} connection(s)`,
         senderInfo: {
-          isAuthenticated,
-          userId: userId || null,
-          type: isAuthenticated ? "authenticated" : "anonymous",
+          isAuthenticated: true,
+          userId: userId,
+          userEmail: session?.user?.email,
+          userName: session?.user?.name,
+          type: "authenticated",
         },
       }),
       { headers: { "Content-Type": "application/json" } },
     );
   } catch (error) {
-    handleError("sending test SSE notification", error);
+    handleError("sending authenticated SSE notification", error);
 
     return new Response(
       JSON.stringify({

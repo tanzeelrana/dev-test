@@ -18,17 +18,15 @@ export default function SignInPage() {
       const result = await signIn("test-credentials", {
         email,
         name,
-        redirect: false,
+        redirect: true,
       });
 
-      if (result?.ok) {
-        router.push("/sse-demo");
-      } else {
-        console.error("Sign in failed:", result?.error);
+      if (result?.error) {
+        console.error("Sign in failed:", result.error);
+        setIsLoading(false);
       }
     } catch (error) {
       console.error("Sign in error:", error);
-    } finally {
       setIsLoading(false);
     }
   };
