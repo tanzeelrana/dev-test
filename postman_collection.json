@@ -1,0 +1,364 @@
+{
+  "info": {
+    "name": "SSE API Collection",
+    "description": "Complete collection for testing Server-Sent Events (SSE) API endpoints. This collection includes all routes for connecting to SSE streams, sending notifications, and monitoring connection statistics.",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{auth_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000",
+      "type": "string",
+      "description": "Base URL for the API"
+    },
+    {
+      "key": "auth_token",
+      "value": "",
+      "type": "string",
+      "description": "Authentication token (if required)"
+    }
+  ],
+  "item": [
+    {
+      "name": "SSE Connection",
+      "item": [
+        {
+          "name": "Connect to SSE Stream",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream",
+                "type": "text"
+              },
+              {
+                "key": "Cache-Control",
+                "value": "no-cache",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sse?sessionId=test-session&demo=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sse"],
+              "query": [
+                {
+                  "key": "sessionId",
+                  "value": "test-session",
+                  "description": "Optional session ID for connection grouping"
+                },
+                {
+                  "key": "demo",
+                  "value": "true",
+                  "description": "Demo mode flag"
+                }
+              ]
+            },
+            "description": "Establishes a Server-Sent Events connection. This endpoint returns a continuous stream of events. Note: In Postman, this will show the initial connection response and may timeout due to the streaming nature."
+          },
+          "response": [
+            {
+              "name": "Successful Connection",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Accept",
+                    "value": "text/event-stream"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/sse",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "sse"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "plain",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "text/event-stream"
+                },
+                {
+                  "key": "Cache-Control",
+                  "value": "no-cache"
+                },
+                {
+                  "key": "Connection",
+                  "value": "keep-alive"
+                }
+              ],
+              "body": "event: connected\ndata: {\"connectionId\":\"sse_1234567890_abcdef123\",\"timestamp\":1234567890123}\n\nevent: heartbeat\ndata: {\"timestamp\":1234567890456}\n\n"
+            }
+          ]
+        },
+        {
+          "name": "Connect with Custom Parameters",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream",
+                "type": "text"
+              },
+              {
+                "key": "Cache-Control",
+                "value": "no-cache",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/sse?sessionId=custom-session&customParam=value&environment=testing",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sse"],
+              "query": [
+                {
+                  "key": "sessionId",
+                  "value": "custom-session",
+                  "description": "Custom session identifier"
+                },
+                {
+                  "key": "customParam",
+                  "value": "value",
+                  "description": "Any custom parameter for connection metadata"
+                },
+                {
+                  "key": "environment",
+                  "value": "testing",
+                  "description": "Environment identifier"
+                }
+              ]
+            },
+            "description": "Connect to SSE with custom parameters that will be stored in connection metadata."
+          }
+        }
+      ],
+      "description": "Endpoints for establishing SSE connections"
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Send Broadcast Notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventType\": \"user.message\",\n  \"data\": {\n    \"content\": \"Hello everyone! This is a broadcast message.\",\n    \"from\": \"system\",\n    \"priority\": \"normal\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sse/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sse", "notifications"]
+            },
+            "description": "Send a notification to all connected clients. The message will be broadcast to every active SSE connection."
+          },
+          "response": [
+            {
+              "name": "Successful Broadcast",
+              "originalRequest": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"eventType\": \"user.message\",\n  \"data\": {\n    \"content\": \"Hello everyone!\",\n    \"from\": \"system\"\n  }\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/sse/notifications",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "sse", "notifications"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": true,\n  \"eventType\": \"user.message\",\n  \"sent\": 3,\n  \"failed\": 0,\n  \"message\": \"Notification sent to 3 connection(s)\",\n  \"senderInfo\": {\n    \"isAuthenticated\": false,\n    \"userId\": null,\n    \"type\": \"anonymous\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Send System Maintenance Alert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventType\": \"system.maintenance\",\n  \"data\": {\n    \"message\": \"Scheduled maintenance will begin in 30 minutes. Please save your work.\",\n    \"scheduledTime\": \"2024-01-15T15:00:00Z\",\n    \"duration\": \"2 hours\",\n    \"priority\": \"high\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sse/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sse", "notifications"]
+            },
+            "description": "Send a system maintenance notification to all connected clients."
+          }
+        },
+        {
+          "name": "Send Job Progress Update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventType\": \"job.progress\",\n  \"data\": {\n    \"jobId\": \"job-12345\",\n    \"progress\": 75,\n    \"status\": \"processing\",\n    \"message\": \"Processing files... 75% complete\",\n    \"estimatedTimeRemaining\": \"2 minutes\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sse/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sse", "notifications"]
+            },
+            "description": "Send a job progress update notification."
+          }
+        },
+        {
+          "name": "Send Custom Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventType\": \"custom.event\",\n  \"data\": {\n    \"customField1\": \"value1\",\n    \"customField2\": 42,\n    \"customField3\": {\n      \"nested\": \"object\",\n      \"array\": [1, 2, 3]\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sse/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sse", "notifications"]
+            },
+            "description": "Send a custom event with arbitrary data structure."
+          }
+        },
+        {
+          "name": "Send Targeted User Notification",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventType\": \"user.mention\",\n  \"data\": {\n    \"content\": \"You were mentioned in a comment\",\n    \"by\": \"john.doe\",\n    \"in\": \"Project Alpha Discussion\",\n    \"context\": \"Great work on the new feature @user!\"\n  },\n  \"target\": {\n    \"userId\": \"user-123\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sse/notifications",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sse", "notifications"]
+            },
+            "description": "Send a notification to a specific user. Note: This requires authentication and will only work if the requester is authenticated."
+          }
+        }
+      ],
+      "description": "Endpoints for sending notifications through SSE"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Set dynamic timestamp for test messages",
+          "pm.globals.set('timestamp', new Date().toISOString());"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Basic response validation",
+          "pm.test('Response status code is successful', function () {",
+          "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+          "});",
+          "",
+          "// Validate JSON responses",
+          "if (pm.response.headers.get('Content-Type')?.includes('application/json')) {",
+          "    pm.test('Response is valid JSON', function () {",
+          "        pm.response.to.have.jsonBody();",
+          "    });",
+          "}"
+        ]
+      }
+    }
+  ]
+}

@@ -28,6 +28,6 @@ export async function middleware(
 
 export const config = {
   // Specify which routes the middleware applies to
-  // Exclude health checks, static files, and favicon
-  matcher: ["/((?!api/health|_next/static|_next/image|favicon.ico).*)"],
+  // Exclude health checks, static files, favicon, and SSE routes
+  matcher: ["/((?!api/health|api/sse|_next/static|_next/image|favicon.ico).*)"],
 };

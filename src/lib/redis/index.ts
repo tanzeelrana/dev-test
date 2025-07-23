@@ -9,18 +9,33 @@ import { env } from "@/env";
 let redisClient: RedisClient | null = null;
 
 /**
- * Get the Redis client based on the environment.
- * In production, it uses Upstash Redis; in development/testing, it uses IORedis.
- * This function caches the client to avoid creating multiple connections.
- * @returns {Promise<RedisClient>} The Redis client instance
+ * Check if Upstash Redis credentials are properly configured
  */
-export async function getRedis(): Promise<RedisClient> {
-  // Return existing client if already initialized
-  if (redisClient) return redisClient;
+function hasValidUpstashCredentials(): boolean {
+  return !!(
+    env.UPSTASH_REDIS_REST_URL &&
+    env.UPSTASH_REDIS_REST_TOKEN &&
+    env.UPSTASH_REDIS_REST_URL !== "https://www.upstash_url.com" &&
+    env.UPSTASH_REDIS_REST_TOKEN !== "upstash_api_key"
+  );
+}
 
-  redisClient = await createUpstashRedisClient();
-
-  return redisClient;
+/**
+ * Create a mock Redis client for development when Upstash is not configured
+ */
+function createMockRedisClient(): RedisClient {
+  return {
+    get: async () => null,
+    set: async () => "OK",
+    del: async () => 1,
+    publish: async () => 1,
+    scan: async () => ({ cursor: "0", keys: [] }),
+    hget: async () => null,
+    hset: async () => 1,
+    hdel: async () => 1,
+    hgetall: async () => null,
+    hexists: async () => 0,
+  };
 }
 
 /**
@@ -63,4 +78,27 @@ export async function createUpstashRedisClient(): Promise<RedisClient> {
   };
 
   return client;
+}
+
+/**
+ * Get the Redis client based on the environment.
+ * In production, it uses Upstash Redis; in development/testing, it uses a mock if Upstash is not configured.
+ * This function caches the client to avoid creating multiple connections.
+ * @returns {Promise<RedisClient>} The Redis client instance
+ */
+export async function getRedis(): Promise<RedisClient> {
+  // Return existing client if already initialized
+  if (redisClient) return redisClient;
+
+  // In development/testing, use mock if Upstash is not properly configured
+  if (env.NODE_ENV !== "production" && !hasValidUpstashCredentials()) {
+    console.warn(
+      "Using mock Redis client for development. Configure UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN for real Redis functionality.",
+    );
+    redisClient = createMockRedisClient();
+    return redisClient;
+  }
+
+  redisClient = await createUpstashRedisClient();
+  return redisClient;
 }
