@@ -70,6 +70,7 @@ export class SSEManager {
 
     const connectionId = this.generateConnectionId();
     let controller: ReadableStreamDefaultController;
+    let cleanupCalled = false;
 
     const stream = new ReadableStream({
       start: (ctrl) => {
@@ -83,7 +84,11 @@ export class SSEManager {
         ctrl.enqueue(new TextEncoder().encode(welcomeMessage));
       },
       cancel: () => {
-        this.removeConnection(connectionId);
+        // Prevent double cleanup
+        if (!cleanupCalled) {
+          cleanupCalled = true;
+          this.removeConnection(connectionId);
+        }
       },
     });
 
@@ -94,6 +99,10 @@ export class SSEManager {
       controller: controller!,
       lastPing: Date.now(),
       metadata: params.metadata,
+      connectionTime: Date.now(),
+      userAgent: params.metadata?.userAgent as string,
+      ip: params.metadata?.ip as string,
+      closed: false,
     };
 
     this.store.addConnection(connection);
@@ -117,11 +126,31 @@ export class SSEManager {
       return false;
     }
 
+    if (connection.closed) {
+      log.debug(
+        `Connection ${connectionId} was already closed, skipping cleanup`,
+      );
+      return true;
+    }
+
+    connection.closed = true;
+
     try {
-      connection.controller.close();
+      if (connection.controller) {
+        connection.controller.close();
+      }
     } catch (error) {
-      // Connection might already be closed
-      log.warn(`Error closing connection ${connectionId}:`, error);
+      // Connection might already be closed - this is expected in many cases
+      if (
+        error instanceof Error &&
+        (error.message.includes("already closed") ||
+          error.message.includes("Invalid state") ||
+          (error as any).code === "ERR_INVALID_STATE")
+      ) {
+        log.debug(`Connection ${connectionId} controller was already closed`);
+      } else {
+        log.warn(`Unexpected error closing connection ${connectionId}:`, error);
+      }
     }
 
     const removed = this.store.removeConnection(connectionId);
@@ -153,6 +182,13 @@ export class SSEManager {
     const encodedMessage = new TextEncoder().encode(message);
 
     for (const connection of connections) {
+      // Skip closed connections
+      if (connection.closed) {
+        failed++;
+        log.debug(`Skipping closed connection ${connection.id}`);
+        continue;
+      }
+
       try {
         connection.controller.enqueue(encodedMessage);
         sent++;

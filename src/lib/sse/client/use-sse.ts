@@ -213,7 +213,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
             eventSourceRef.current.close();
           }
 
-          console.log("🔌 SSE: Attempting to reconnect...");
+          console.log(" Attempting to reconnect...");
           setState((prev) => ({
             ...prev,
             connecting: true,
@@ -270,7 +270,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
       eventSourceRef.current.close();
     }
 
-    console.log("🔌 SSE: Attempting to connect...");
+    console.log("  Attempting to connect...");
     setState((prev) => ({
       ...prev,
       connecting: true,
@@ -296,7 +296,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
         }
       });
 
-      console.log("🔌 SSE: EventSource created, URL:", buildSSEUrl());
+      console.log("  EventSource created, URL:", buildSSEUrl());
     } catch (error) {
       console.error("Failed to create SSE connection:", error);
       setState((prev) => ({
@@ -308,7 +308,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
   }, [buildSSEUrl, handleOpen, handleError, handleMessage]);
 
   const disconnect = useCallback(() => {
-    console.log("🔌 SSE: Disconnecting...");
+    console.log("  Disconnecting...");
 
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
@@ -318,7 +318,7 @@ export function useSSE(options: UseSSEOptions = {}): UseSSEReturn {
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
-      console.log("🔌 SSE: EventSource closed");
+      console.log("  EventSource closed");
     }
 
     setState({

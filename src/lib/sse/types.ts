@@ -5,6 +5,10 @@ export interface SSEConnection {
   controller: ReadableStreamDefaultController;
   lastPing: number;
   metadata?: Record<string, unknown>;
+  connectionTime: number;
+  userAgent?: string;
+  ip?: string;
+  closed?: boolean;
 }
 
 export interface SSEEvent<T = unknown> {

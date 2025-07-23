@@ -15,12 +15,10 @@ export function SSEDemo() {
   const [testMessage, setTestMessage] = useState("");
 
   const { state, lastEvent, connect, disconnect, subscribe } = useSSE({
-    params: { demo: "true" },
     autoReconnect: true,
     maxReconnectAttempts: 3,
   });
 
-  // Subscribe to different event types
   useEffect(() => {
     const unsubscribeMessage = subscribe("user.message", (data: any) => {
       setNotifications((prev) => [
@@ -58,7 +56,6 @@ export function SSEDemo() {
       ]);
     });
 
-    // Subscribe to all events for debugging
     const unsubscribeAll = subscribe("*", (data: any, event) => {
       console.log("SSE Event received:", event);
     });
@@ -148,7 +145,6 @@ export function SSEDemo() {
           </div>
         </div>
 
-        {/* Connection Controls */}
         <div className="mb-6 flex gap-2">
           <button
             onClick={connect}
@@ -166,7 +162,6 @@ export function SSEDemo() {
           </button>
         </div>
 
-        {/* Test Notification Sender */}
         <div className="mb-6 rounded-lg bg-blue-50 p-4">
           <h3 className="mb-2 text-lg font-semibold">Send Test Notification</h3>
           <div className="flex gap-2">
@@ -191,7 +186,6 @@ export function SSEDemo() {
           </p>
         </div>
 
-        {/* Notifications List */}
         <div className="rounded-lg bg-gray-50 p-4">
           <div className="mb-4 flex items-center justify-between">
             <h3 className="text-lg font-semibold">
@@ -237,26 +231,6 @@ export function SSEDemo() {
             )}
           </div>
         </div>
-
-        {/* Debug Information */}
-        <details className="mt-6">
-          <summary className="cursor-pointer text-sm font-medium text-gray-700">
-            Debug Information
-          </summary>
-          <div className="mt-2 rounded bg-gray-100 p-4 text-sm">
-            <pre className="whitespace-pre-wrap">
-              {JSON.stringify(
-                {
-                  connectionState: state,
-                  lastEvent: lastEvent,
-                  notificationCount: notifications.length,
-                },
-                null,
-                2,
-              )}
-            </pre>
-          </div>
-        </details>
       </div>
     </div>
   );
